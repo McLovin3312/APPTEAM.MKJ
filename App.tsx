@@ -1,7 +1,9 @@
 import 'react-native-gesture-handler';
 import React from 'react';
-import AppNavigator from './src/navigation/AppNavigator';
+// necesito que importes en ves de appNavigator a StackNavigator, ya que el componente se llama StackNavigator y no AppNavigator
+// import AppNavigator from './src/navegacion/StackNavigatior';
+import { StackNavigator } from './src/navegacion/StackNavigatior';
 
 export default function App() {
-  return <AppNavigator />;
+  return <StackNavigator />;
 }
