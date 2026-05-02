@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../lib/authService';
 import { supabase } from '../lib/supabase';
-import CustomAlert from '../Components/CustomAlert';
+import CustomAlert from '../components/CustomAlert';
 
 export default function LoginScreen({ navigation }: any) {
   const [email,    setEmail]    = useState('');

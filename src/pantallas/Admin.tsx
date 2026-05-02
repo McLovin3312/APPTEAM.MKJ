@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../lib/authService';
-import CustomAlert from '../Components/CustomAlert';
+import CustomAlert from '../components/CustomAlert';
 
 const AdminScreen = ({ navigation }: any) => {
   const [alert, setAlert] = React.useState({ visible: false, title: '', msg: '' });

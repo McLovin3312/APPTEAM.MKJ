@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { authService } from '../lib/authService';
-import CustomAlert from '../Components/CustomAlert';
+import CustomAlert from '../components/CustomAlert';
 
 const AVATAR_COLORS = ['#4F46E5','#10B981','#F59E0B','#EF4444','#EC4899','#3B82F6','#8B5CF6','#06B6D4'];
 

@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
-import CustomAlert from '../Components/CustomAlert';
+import CustomAlert from '../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
 const getMonto = (p: any): number => p.monto_total ?? p.total ?? 0;

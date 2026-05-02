@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCart } from '../Context/CartContext';
 import { supabase } from '../lib/supabase';
 import { authService } from '../lib/authService';
-import CustomAlert from '../Components/CustomAlert';
+import CustomAlert from '../components/CustomAlert';
 
 export default function CheckoutScreen({ navigation }: any) {
   const { items, total, clearCart } = useCart();

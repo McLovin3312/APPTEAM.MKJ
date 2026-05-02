@@ -4,7 +4,7 @@ import {View, Text, FlatList, TouchableOpacity, StyleSheet,TextInput, Modal, Act
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
-import CustomAlert from '../Components/CustomAlert';
+import CustomAlert from '../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
 

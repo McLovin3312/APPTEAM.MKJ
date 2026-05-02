@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../lib/authService';
-import CustomAlert from '../Components/CustomAlert';
+import CustomAlert from '../components/CustomAlert';
 
 export default function RegisterScreen({ navigation }: any) {
   const [form, setForm] = useState({ nombre: '', apellido: '', email: '', password: '', telefono: '' });
