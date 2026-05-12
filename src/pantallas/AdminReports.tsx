@@ -73,7 +73,7 @@ export default function AdminReportsScreen({ navigation }: any) {
       });
       const top = Object.entries(prodMap)
         .map(([nombre, v]) => ({ nombre, ...v }))
-        .sort((a, b) => b.total - a.total)
+        .sort((a, b) => b.qty - a.qty)
         .slice(0, 5);
       setTopProductos(top);
 

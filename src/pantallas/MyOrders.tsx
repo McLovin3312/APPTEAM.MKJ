@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, StatusBar, ScrollView, Modal
+  ActivityIndicator, StatusBar, ScrollView, Modal, Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
@@ -16,7 +16,6 @@ const ESTADO_STYLE: Record<string, { bg: string; color: string; emoji: string; s
 };
 
 const PASOS = ['Pendiente', 'Confirmado', 'Enviado', 'Entregado'];
-
 const getMonto = (p: any): number => p.monto_total ?? p.total ?? 0;
 
 export default function MyOrdersScreen({ navigation }: any) {
@@ -34,13 +33,28 @@ export default function MyOrdersScreen({ navigation }: any) {
       setLoading(true);
       const session = await authService.getSession();
       if (!session) return;
+      
       const { data, error } = await supabase
-          .from('pedidos')
-          .select('*')
-          .eq('cliente_id', session.user.id)
-          .order('creado_at', { ascending: false });
+        .from('pedidos')
+        .select('*')
+        .eq('cliente_id', session.user.id)
+        .order('creado_at', { ascending: false });
+        
       if (error) throw error;
-      setPedidos(data ?? []);
+
+      let listaPedidos = data ?? [];
+      const ahora = new Date().getTime();
+
+      // AUTO-ACTUALIZAR A ENTREGADO DESPUÉS DE 5 MINUTOS (300,000 ms)
+      for (let p of listaPedidos) {
+        const tiempoPasado = ahora - new Date(p.creado_at).getTime();
+        if (p.estado !== 'Entregado' && p.estado !== 'Cancelado' && tiempoPasado > 300000) {
+          await supabase.from('pedidos').update({ estado: 'Entregado' }).eq('id', p.id);
+          p.estado = 'Entregado'; 
+        }
+      }
+
+      setPedidos(listaPedidos);
     } catch (e) {
       console.log('Error pedidos:', e);
     } finally {
@@ -55,7 +69,7 @@ export default function MyOrdersScreen({ navigation }: any) {
 
   const abrirDetalle = (p: any) => {
     setSelected(p);
-    setShowConfirm(false);
+    setShowConfirm(false); 
     setModal(true);
   };
 
@@ -63,202 +77,202 @@ export default function MyOrdersScreen({ navigation }: any) {
     setCanceling(true);
     try {
       const { error } = await supabase
-          .from('pedidos')
-          .update({ estado: 'Cancelado' })
-          .eq('id', pedidoId);
+        .from('pedidos')
+        .update({ estado: 'Cancelado' })
+        .eq('id', pedidoId)
+        .select()
+        .single();
 
       if (error) throw error;
 
       setPedidos(prev => prev.map(p => p.id === pedidoId ? { ...p, estado: 'Cancelado' } : p));
       setSelected((prev: any) => prev ? { ...prev, estado: 'Cancelado' } : null);
-      setShowConfirm(false);
+      setShowConfirm(false); 
     } catch (e) {
       console.log('Error cancelando el pedido:', e);
+      Alert.alert('Acción Bloqueada', 'No tienes permisos para actualizar. Revisa las políticas RLS.');
     } finally {
       setCanceling(false);
     }
   };
 
-  // Corrección 1: Destructuración correcta para TypeScript ({ item }: { item: any })
   const renderPedido = useCallback(({ item }: { item: any }) => {
     const es    = ESTADO_STYLE[item.estado] ?? ESTADO_STYLE['Pendiente'];
     const monto = getMonto(item);
     return (
-        <TouchableOpacity style={s.card} activeOpacity={0.8} onPress={() => abrirDetalle(item)}>
-          <View style={[s.estadoStripe, { backgroundColor: es.color }]} />
-          <View style={s.cardBody}>
-            <View style={s.cardTop}>
-              <View style={[s.badge, { backgroundColor: es.bg }]}>
-                <Text style={[s.badgeText, { color: es.color }]}>{es.emoji} {item.estado}</Text>
-              </View>
-              <Text style={s.cardTotal}>${monto.toLocaleString()}</Text>
+      <TouchableOpacity style={s.card} activeOpacity={0.8} onPress={() => abrirDetalle(item)}>
+        <View style={[s.estadoStripe, { backgroundColor: es.color }]} />
+        <View style={s.cardBody}>
+          <View style={s.cardTop}>
+            <View style={[s.badge, { backgroundColor: es.bg }]}>
+              <Text style={[s.badgeText, { color: es.color }]}>{es.emoji} {item.estado}</Text>
             </View>
-            <Text style={s.cardFecha}>📅 {fechaCorta(item.creado_at)}</Text>
-            <Text style={s.cardItems} numberOfLines={1}>
-              {(item.productos ?? []).map((p: any) => p.nombre).join(', ')}
-            </Text>
-            <Text style={s.verDetalle}>Ver detalle →</Text>
+            <Text style={s.cardTotal}>${monto.toLocaleString()}</Text>
           </View>
-        </TouchableOpacity>
+          <Text style={s.cardFecha}>📅 {fechaCorta(item.creado_at)}</Text>
+          <Text style={s.cardItems} numberOfLines={1}>
+            {(item.productos ?? []).map((p: any) => p.nombre).join(', ')}
+          </Text>
+          <Text style={s.verDetalle}>Ver detalle →</Text>
+        </View>
+      </TouchableOpacity>
     );
   }, [pedidos]);
 
   return (
-      <SafeAreaView style={s.container}>
-        <StatusBar barStyle="dark-content" />
+    <SafeAreaView style={s.container}>
+      <StatusBar barStyle="dark-content" />
 
-        <View style={s.header}>
-          <Text style={s.headerTitle}>Mis Pedidos</Text>
-          <TouchableOpacity onPress={cargar}>
-            <Text style={{ fontSize: 20 }}>🔄</Text>
-          </TouchableOpacity>
+      <View style={s.header}>
+        <Text style={s.headerTitle}>Mis Pedidos</Text>
+        <TouchableOpacity onPress={cargar}>
+          <Text style={{ fontSize: 20 }}>🔄</Text>
+        </TouchableOpacity>
+      </View>
+
+      {loading ? (
+        <View style={s.center}>
+          <ActivityIndicator size="large" color="#4F46E5" />
+          <Text style={s.loadingText}>Cargando pedidos...</Text>
         </View>
+      ) : pedidos.length === 0 ? (
+        <View style={s.center}>
+          <Text style={{ fontSize: 64 }}>📦</Text>
+          <Text style={s.emptyTitle}>Sin pedidos aún</Text>
+          <Text style={s.emptySubtitle}>Tus pedidos aparecerán aquí</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={pedidos}
+          keyExtractor={item => item.id}
+          renderItem={renderPedido}
+          contentContainerStyle={s.list}
+          showsVerticalScrollIndicator={false}
+          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+          onRefresh={cargar}
+          refreshing={loading}
+        />
+      )}
 
-        {loading ? (
-            <View style={s.center}>
-              <ActivityIndicator size="large" color="#4F46E5" />
-              <Text style={s.loadingText}>Cargando pedidos...</Text>
-            </View>
-        ) : pedidos.length === 0 ? (
-            <View style={s.center}>
-              <Text style={{ fontSize: 64 }}>📦</Text>
-              <Text style={s.emptyTitle}>Sin pedidos aún</Text>
-              <Text style={s.emptySubtitle}>Tus pedidos aparecerán aquí</Text>
-            </View>
-        ) : (
-            <FlatList
-                data={pedidos}
-                keyExtractor={item => item.id}
-                renderItem={renderPedido}
-                contentContainerStyle={s.list}
-                showsVerticalScrollIndicator={false}
-                ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-                onRefresh={cargar}
-                refreshing={loading}
-            />
-        )}
+      <Modal visible={modal} animationType="slide" transparent>
+        <View style={s.modalOverlay}>
+          <View style={s.modalSheet}>
+            <View style={s.modalHandle} />
+            {selected && (() => {
+              const es    = ESTADO_STYLE[selected.estado] ?? ESTADO_STYLE['Pendiente'];
+              const step  = es.step;
+              const monto = getMonto(selected);
+              const esCancelable = selected.estado === 'Pendiente' || selected.estado === 'Confirmado';
 
-        {/* Modal detalle */}
-        <Modal visible={modal} animationType="slide" transparent>
-          <View style={s.modalOverlay}>
-            <View style={s.modalSheet}>
-              <View style={s.modalHandle} />
-              {selected && (() => {
-                const es    = ESTADO_STYLE[selected.estado] ?? ESTADO_STYLE['Pendiente'];
-                const step  = es.step;
-                const monto = getMonto(selected);
-                const esCancelable = selected.estado === 'Pendiente' || selected.estado === 'Confirmado';
+              return (
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <View style={[s.detEstado, { backgroundColor: es.bg }]}>
+                    <Text style={{ fontSize: 32 }}>{es.emoji}</Text>
+                    <Text style={[s.detEstadoText, { color: es.color }]}>{selected.estado}</Text>
+                  </View>
 
-                return (
-                    <ScrollView showsVerticalScrollIndicator={false}>
-                      <View style={[s.detEstado, { backgroundColor: es.bg }]}>
-                        <Text style={{ fontSize: 32 }}>{es.emoji}</Text>
-                        <Text style={[s.detEstadoText, { color: es.color }]}>{selected.estado}</Text>
-                      </View>
-
-                      {selected.estado !== 'Cancelado' && (
-                          <View style={s.tracker}>
-                            {PASOS.map((p, i) => {
-                              const done    = step > i + 1;
-                              const current = step === i + 1;
-                              const es2     = ESTADO_STYLE[p];
-
-                              // Corrección 2: Uso de ternarios estrictos para los estilos
-                              return (
-                                  <React.Fragment key={p}>
-                                    <View style={s.trackerStep}>
-                                      <View style={[
-                                        s.trackerDot,
-                                        done ? { backgroundColor: '#10B981', borderColor: '#10B981' } : undefined,
-                                        current ? { backgroundColor: es2.color, borderColor: es2.color } : undefined,
-                                      ]}>
-                                        <Text style={s.trackerDotText}>{done ? '✓' : `${i + 1}`}</Text>
-                                      </View>
-                                      <Text style={[
-                                        s.trackerLabel,
-                                        (done || current) ? s.trackerLabelActive : undefined,
-                                      ]}>{p}</Text>
-                                    </View>
-                                    {i < PASOS.length - 1 && (
-                                        <View style={[s.trackerLine, done ? { backgroundColor: '#10B981' } : undefined]} />
-                                    )}
-                                  </React.Fragment>
-                              );
-                            })}
-                          </View>
-                      )}
-
-                      <Text style={s.detFecha}>
-                        📅 {new Date(selected.creado_at).toLocaleDateString('es-CO', {
-                        weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
-                      })}
-                      </Text>
-
-                      {selected.direccion && (
-                          <View style={s.detInfoRow}>
-                            <Text style={s.detInfoIcon}>📍</Text>
-                            <Text style={s.detInfoText}>{selected.direccion}</Text>
-                          </View>
-                      )}
-
-                      <Text style={s.sectionLabel}>🛒 Productos</Text>
-                      <View style={s.detCard}>
-                        {(selected.productos ?? []).map((p: any, idx: number) => (
-                            <View key={idx} style={[s.prodRow, idx < selected.productos.length - 1 && s.prodBorder]}>
-                              <View style={{ flex: 1 }}>
-                                <Text style={s.prodNombre}>{p.nombre}</Text>
-                                <Text style={s.prodDetalle}>${p.precio} × {p.qty}</Text>
+                  {selected.estado !== 'Cancelado' && (
+                    <View style={s.tracker}>
+                      {PASOS.map((p, i) => {
+                        const done    = step > i + 1;
+                        const current = step === i + 1;
+                        const es2     = ESTADO_STYLE[p];
+                        
+                        return (
+                          <React.Fragment key={p}>
+                            <View style={s.trackerStep}>
+                              <View style={[
+                                s.trackerDot,
+                                done ? { backgroundColor: '#10B981', borderColor: '#10B981' } : undefined,
+                                current ? { backgroundColor: es2.color, borderColor: es2.color } : undefined,
+                              ]}>
+                                <Text style={s.trackerDotText}>{done ? '✓' : `${i + 1}`}</Text>
                               </View>
-                              <Text style={s.prodSubtotal}>${p.precio * p.qty}</Text>
+                              <Text style={[
+                                s.trackerLabel,
+                                (done || current) ? s.trackerLabelActive : undefined,
+                              ]}>{p}</Text>
                             </View>
-                        ))}
-                        <View style={[s.prodRow, { borderTopWidth: 1, borderTopColor: '#374151' }]}>
-                          <Text style={[s.prodNombre, { flex: 1 }]}>TOTAL</Text>
-                          <Text style={[s.prodSubtotal, { color: '#10B981', fontSize: 18 }]}>
-                            ${monto.toLocaleString()}
-                          </Text>
+                            {i < PASOS.length - 1 && (
+                              <View style={[s.trackerLine, done ? { backgroundColor: '#10B981' } : undefined]} />
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </View>
+                  )}
+
+                  <Text style={s.detFecha}>
+                    📅 {new Date(selected.creado_at).toLocaleDateString('es-CO', {
+                      weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+                    })}
+                  </Text>
+
+                  {selected.direccion && (
+                    <View style={s.detInfoRow}>
+                      <Text style={s.detInfoIcon}>📍</Text>
+                      <Text style={s.detInfoText}>{selected.direccion}</Text>
+                    </View>
+                  )}
+
+                  <Text style={s.sectionLabel}>🛒 Productos</Text>
+                  <View style={s.detCard}>
+                    {(selected.productos ?? []).map((p: any, idx: number) => (
+                      <View key={idx} style={[s.prodRow, idx < selected.productos.length - 1 && s.prodBorder]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.prodNombre}>{p.nombre}</Text>
+                          <Text style={s.prodDetalle}>${p.precio} × {p.qty}</Text>
                         </View>
+                        <Text style={s.prodSubtotal}>${p.precio * p.qty}</Text>
                       </View>
+                    ))}
+                    <View style={[s.prodRow, { borderTopWidth: 1, borderTopColor: '#374151' }]}>
+                      <Text style={[s.prodNombre, { flex: 1 }]}>TOTAL</Text>
+                      <Text style={[s.prodSubtotal, { color: '#10B981', fontSize: 18 }]}>
+                        ${monto.toLocaleString()}
+                      </Text>
+                    </View>
+                  </View>
 
-                      {esCancelable && (
-                          showConfirm ? (
-                              <View style={s.confirmActions}>
-                                <TouchableOpacity
-                                    style={[s.cancelBtn, s.btnNo]}
-                                    onPress={() => setShowConfirm(false)}
-                                    disabled={canceling}
-                                >
-                                  <Text style={[s.cancelBtnText, { color: '#9CA3AF' }]}>VOLVER</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[s.cancelBtn, s.btnYes]}
-                                    onPress={() => ejecutarCancelacion(selected.id)}
-                                    disabled={canceling}
-                                >
-                                  {canceling ? <ActivityIndicator color="#FFF" /> : <Text style={[s.cancelBtnText, { color: '#FFF' }]}>SÍ, CANCELAR</Text>}
-                                </TouchableOpacity>
-                              </View>
-                          ) : (
-                              <TouchableOpacity
-                                  style={[s.cancelBtn, canceling ? { opacity: 0.6 } : undefined]}
-                                  onPress={() => setShowConfirm(true)}
-                                  disabled={canceling}
-                              >
-                                <Text style={s.cancelBtnText}>❌ CANCELAR PEDIDO</Text>
-                              </TouchableOpacity>
-                          )
-                      )}
-
-                      <TouchableOpacity style={s.closeBtn} onPress={() => setModal(false)}>
-                        <Text style={s.closeBtnText}>CERRAR</Text>
+                  {esCancelable && (
+                    showConfirm ? (
+                      <View style={s.confirmActions}>
+                        <TouchableOpacity 
+                          style={[s.cancelBtn, s.btnNo]} 
+                          onPress={() => setShowConfirm(false)}
+                          disabled={canceling}
+                        >
+                          <Text style={[s.cancelBtnText, { color: '#9CA3AF' }]}>VOLVER</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          style={[s.cancelBtn, s.btnYes]} 
+                          onPress={() => ejecutarCancelacion(selected.id)}
+                          disabled={canceling}
+                        >
+                          {canceling ? <ActivityIndicator color="#FFF" /> : <Text style={[s.cancelBtnText, { color: '#FFF' }]}>SÍ, CANCELAR</Text>}
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity 
+                        style={[s.cancelBtn, canceling ? { opacity: 0.6 } : undefined]} 
+                        onPress={() => setShowConfirm(true)}
+                        disabled={canceling}
+                      >
+                        <Text style={s.cancelBtnText}>❌ CANCELAR PEDIDO</Text>
                       </TouchableOpacity>
-                    </ScrollView>
-                );
-              })()}
-            </View>
+                    )
+                  )}
+
+                  <TouchableOpacity style={s.closeBtn} onPress={() => setModal(false)}>
+                    <Text style={s.closeBtnText}>CERRAR</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              );
+            })()}
           </View>
-        </Modal>
-      </SafeAreaView>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
@@ -291,10 +305,7 @@ const s = StyleSheet.create({
   trackerDot:    { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: '#374151', backgroundColor: '#1F2937', justifyContent: 'center', alignItems: 'center' },
   trackerDotText:{ color: '#FFF', fontSize: 11, fontWeight: '900' },
   trackerLabel:  { color: '#6B7280', fontSize: 9, fontWeight: '600', textAlign: 'center', maxWidth: 52 },
-
-  // Corrección 3: Agregado el estilo activo para el trackerLabel
   trackerLabelActive: { color: '#111827', fontWeight: '700' },
-
   trackerLine:   { flex: 1, height: 2, backgroundColor: '#374151', marginBottom: 20 },
   detFecha:      { color: '#9CA3AF', fontSize: 13, textAlign: 'center', marginBottom: 12 },
   detInfoRow:    { flexDirection: 'row', gap: 8, backgroundColor: '#1F2937', borderRadius: 12, padding: 12, marginBottom: 12 },
@@ -307,14 +318,11 @@ const s = StyleSheet.create({
   prodNombre:    { color: '#FFF', fontSize: 14, fontWeight: '700' },
   prodDetalle:   { color: '#6B7280', fontSize: 12, marginTop: 1 },
   prodSubtotal:  { color: '#10B981', fontSize: 14, fontWeight: '900' },
-
   cancelBtn:     { backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: 16, borderRadius: 16, alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)' },
   cancelBtnText: { color: '#EF4444', fontWeight: '800', letterSpacing: 1 },
-
   confirmActions:{ flexDirection: 'row', gap: 10, marginBottom: 12 },
   btnNo:         { flex: 1, backgroundColor: '#1F2937', borderColor: '#374151', marginBottom: 0 },
   btnYes:        { flex: 1, backgroundColor: '#EF4444', borderColor: '#EF4444', marginBottom: 0 },
-
   closeBtn:      { backgroundColor: '#1F2937', padding: 16, borderRadius: 16, alignItems: 'center', marginBottom: 8 },
   closeBtnText:  { color: '#9CA3AF', fontWeight: '800', letterSpacing: 1 },
 });

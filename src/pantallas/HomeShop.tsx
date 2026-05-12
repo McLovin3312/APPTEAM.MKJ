@@ -2,18 +2,19 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, FlatList, Image, StyleSheet,
   ActivityIndicator, TouchableOpacity, StatusBar,
-  Dimensions, TextInput, ScrollView,
+  Dimensions, TextInput, ScrollView, Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
-import { productService } from '../lib/productService'; // <-- Importamos el servicio
+import { productService } from '../lib/productService'; 
 import { useCart } from '../Context/CartContext';
+import { authService } from '../lib/authService';
 import CustomAlert from '../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
 
-export default function HomeShopScreen() {
-  const { addItem, count } = useCart();
+export default function HomeShopScreen({ navigation }: any) {
+  const { addItem } = useCart();
   const [products,   setProducts]   = useState<any[]>([]);
   const [filtered,   setFiltered]   = useState<any[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -30,8 +31,8 @@ export default function HomeShopScreen() {
     if (catActiva !== 'Todos') lista = lista.filter(p => p.categoria === catActiva);
     const q = search.toLowerCase();
     if (q) lista = lista.filter(p =>
-        p.nombre.toLowerCase().includes(q) ||
-        p.categoria.toLowerCase().includes(q)
+      p.nombre.toLowerCase().includes(q) ||
+      p.categoria.toLowerCase().includes(q)
     );
     setFiltered(lista);
   }, [search, catActiva, products]);
@@ -39,24 +40,22 @@ export default function HomeShopScreen() {
   const cargarProductos = async () => {
     try {
       setLoading(true);
-
-      // Ejecutamos ambas peticiones al mismo tiempo para mayor rapidez
+      
       const [dbResponse, dummyData] = await Promise.all([
         supabase
-            .from('productos')
-            .select('*')
-            .eq('activo', true)
-            .order('created_at', { ascending: false }),
+          .from('productos')
+          .select('*')
+          .eq('activo', true)
+          .order('created_at', { ascending: false }),
         productService.getDummyProducts()
       ]);
 
       if (dbResponse.error) throw dbResponse.error;
-
+      
       const dbLista = dbResponse.data ?? [];
 
-      // Formateamos los productos de la API para que coincidan con la estructura de tu Supabase
       const formattedDummy = dummyData.map((item: any) => ({
-        id: `dummy-${item.id}`, // Le ponemos un prefijo para evitar choques de IDs con Supabase
+        id: `dummy-${item.id}`,
         nombre: item.title,
         descripcion: item.description,
         precio: item.price,
@@ -65,14 +64,13 @@ export default function HomeShopScreen() {
         stock: item.stock ?? 10,
       }));
 
-      // Combinamos ambas listas: Primero los tuyos, luego los de relleno
       const listaFinal = [...dbLista, ...formattedDummy];
-
       setProducts(listaFinal);
 
-      // Extraemos las categorías únicas de la lista combinada
-      const cats = ['Todos', ...new Set<string>(listaFinal.map((p: any) => p.categoria))];
-      setCategories(cats);
+      // Extraer categorías y ordenarlas alfabéticamente de forma independiente
+      const categoriasUnicas = Array.from(new Set<string>(listaFinal.map((p: any) => p.categoria)));
+      const catsOrdenadas = ['Todos', ...categoriasUnicas.sort((a, b) => a.localeCompare(b))];
+      setCategories(catsOrdenadas);
     } catch {
       setAlert({ visible: true, title: 'ERROR', msg: 'No se pudieron cargar los productos.' });
     } finally {
@@ -92,146 +90,156 @@ export default function HomeShopScreen() {
     setTimeout(() => setAddedId(null), 800);
   };
 
+  const handleLogout = () => {
+    Alert.alert('Cerrar sesión', '¿Deseas salir de tu cuenta?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { 
+        text: 'Salir', 
+        style: 'destructive', 
+        onPress: async () => {
+          await authService.signOut();
+          navigation.getParent()?.replace('Login');
+        } 
+      },
+    ]);
+  };
+
   const renderProducto = ({ item }: any) => {
     const added = addedId === item.id;
     return (
-        <View style={s.card}>
-          <View style={s.imgBox}>
-            {item.imagen_url ? (
-                <Image source={{ uri: item.imagen_url }} style={s.img} />
-            ) : (
-                <View style={s.imgPlaceholder}>
-                  <Text style={{ fontSize: 36 }}>📦</Text>
-                </View>
-            )}
-            {item.stock !== null && item.stock <= 5 && item.stock > 0 && (
-                <View style={s.stockTag}>
-                  <Text style={s.stockTagText}>¡Últimas {item.stock}!</Text>
-                </View>
-            )}
-            {item.stock === 0 && (
-                <View style={[s.stockTag, { backgroundColor: '#EF4444' }]}>
-                  <Text style={s.stockTagText}>Agotado</Text>
-                </View>
-            )}
-          </View>
-          <View style={s.info}>
-            <Text style={s.category}>{item.categoria.toUpperCase()}</Text>
-            <Text style={s.name} numberOfLines={1}>{item.nombre}</Text>
-            {item.descripcion ? (
-                <Text style={s.desc} numberOfLines={1}>{item.descripcion}</Text>
-            ) : null}
-            <View style={s.priceRow}>
-              <Text style={s.price}>${item.precio}</Text>
-              <TouchableOpacity
-                  style={[s.addBtn, added && s.addBtnDone, item.stock === 0 && s.addBtnDisabled]}
-                  onPress={() => item.stock !== 0 && handleAdd(item)}
-                  activeOpacity={0.8}
-                  disabled={item.stock === 0}
-              >
-                <Text style={s.addBtnText}>{added ? '✓' : '+'}</Text>
-              </TouchableOpacity>
+      <View style={s.card}>
+        <View style={s.imgBox}>
+          {item.imagen_url ? (
+            <Image source={{ uri: item.imagen_url }} style={s.img} />
+          ) : (
+            <View style={s.imgPlaceholder}>
+              <Text style={{ fontSize: 36 }}>📦</Text>
             </View>
+          )}
+          {item.stock !== null && item.stock <= 5 && item.stock > 0 && (
+            <View style={s.stockTag}>
+              <Text style={s.stockTagText}>¡Últimas {item.stock}!</Text>
+            </View>
+          )}
+          {item.stock === 0 && (
+            <View style={[s.stockTag, { backgroundColor: '#EF4444' }]}>
+              <Text style={s.stockTagText}>Agotado</Text>
+            </View>
+          )}
+        </View>
+        <View style={s.info}>
+          <Text style={s.category}>{item.categoria.toUpperCase()}</Text>
+          <Text style={s.name} numberOfLines={1}>{item.nombre}</Text>
+          {item.descripcion ? (
+            <Text style={s.desc} numberOfLines={1}>{item.descripcion}</Text>
+          ) : null}
+          <View style={s.priceRow}>
+            <Text style={s.price}>${item.precio}</Text>
+            <TouchableOpacity
+              style={[s.addBtn, added && s.addBtnDone, item.stock === 0 && s.addBtnDisabled]}
+              onPress={() => item.stock !== 0 && handleAdd(item)}
+              activeOpacity={0.8}
+              disabled={item.stock === 0}
+            >
+              <Text style={s.addBtnText}>{added ? '✓' : '+'}</Text>
+            </TouchableOpacity>
           </View>
         </View>
+      </View>
     );
   };
 
   if (loading) return (
-      <View style={s.loader}>
-        <ActivityIndicator size="large" color="#4F46E5" />
-        <Text style={s.loaderText}>Cargando MANYSHOP...</Text>
-      </View>
+    <View style={s.loader}>
+      <ActivityIndicator size="large" color="#4F46E5" />
+      <Text style={s.loaderText}>Cargando MANYSHOP...</Text>
+    </View>
   );
 
   return (
-      <SafeAreaView style={s.container}>
-        <StatusBar barStyle="dark-content" />
+    <SafeAreaView style={s.container}>
+      <StatusBar barStyle="dark-content" />
 
-        {/* Header */}
-        <View style={s.header}>
-          <View>
-            <Text style={s.welcome}>¡Hola de nuevo!</Text>
-            <Text style={s.title}>Explorar</Text>
-          </View>
-          <View style={s.cartBadgeBox}>
-            <Text style={{ fontSize: 28 }}>🛍</Text>
-            {count > 0 && (
-                <View style={s.cartBadge}>
-                  <Text style={s.cartBadgeText}>{count}</Text>
-                </View>
-            )}
-          </View>
+      {/* Header */}
+      <View style={s.header}>
+        <View>
+          <Text style={s.welcome}>¡Hola de nuevo!</Text>
+          <Text style={s.title}>Explorar</Text>
         </View>
+        {/* BOTÓN DE SALIR (Reemplaza al carrito) */}
+        <TouchableOpacity style={{ padding: 8 }} onPress={handleLogout}>
+          <Text style={{ fontSize: 28, color: '#EF4444' }}>🚪</Text>
+        </TouchableOpacity>
+      </View>
 
-        {/* Buscador */}
-        <View style={s.searchBox}>
-          <Text style={s.searchIcon}>🔍</Text>
-          <TextInput
-              style={s.searchInput}
-              placeholder="Buscar productos..."
-              placeholderTextColor="#9CA3AF"
-              value={search}
-              onChangeText={setSearch}
-          />
-          {search.length > 0 && (
-              <TouchableOpacity onPress={() => setSearch('')}>
-                <Text style={{ color: '#9CA3AF', fontSize: 16, paddingHorizontal: 8 }}>✕</Text>
-              </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Categorías dinámicas */}
-        <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={s.filterBar}
-            contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
-        >
-          {categories.map((cat, idx) => (
-              <TouchableOpacity
-                  key={idx}
-                  style={[s.chip, catActiva === cat && s.chipActivo]}
-                  onPress={() => setCatActiva(cat)}
-              >
-                <Text style={[s.chipText, catActiva === cat && s.chipTextActivo]}>
-                  {cat === 'Todos' ? '✨ Todos' : cat}
-                </Text>
-              </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {filtered.length === 0 && !loading ? (
-            <View style={s.empty}>
-              <Text style={{ fontSize: 48 }}>🔍</Text>
-              <Text style={s.emptyTitle}>
-                {search ? 'Sin resultados' : 'No hay productos aún'}
-              </Text>
-              <Text style={s.emptySubtitle}>
-                {search ? 'Intenta con otro término' : 'El administrador aún no ha agregado productos'}
-              </Text>
-            </View>
-        ) : (
-            <>
-              <Text style={s.count}>{filtered.length} productos</Text>
-              <FlatList
-                  data={filtered}
-                  keyExtractor={item => item.id}
-                  renderItem={renderProducto}
-                  numColumns={2}
-                  contentContainerStyle={s.lista}
-                  showsVerticalScrollIndicator={false}
-                  onRefresh={cargarProductos}
-                  refreshing={loading}
-              />
-            </>
-        )}
-
-        <CustomAlert
-            visible={alert.visible} title={alert.title} message={alert.msg}
-            onClose={() => setAlert({ ...alert, visible: false })}
+      {/* Buscador */}
+      <View style={s.searchBox}>
+        <Text style={s.searchIcon}>🔍</Text>
+        <TextInput
+          style={s.searchInput}
+          placeholder="Buscar productos..."
+          placeholderTextColor="#9CA3AF"
+          value={search}
+          onChangeText={setSearch}
         />
-      </SafeAreaView>
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')}>
+            <Text style={{ color: '#9CA3AF', fontSize: 16, paddingHorizontal: 8 }}>✕</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Categorías dinámicas */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={s.filterBar}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+      >
+        {categories.map((cat, idx) => (
+          <TouchableOpacity
+            key={idx}
+            style={[s.chip, catActiva === cat && s.chipActivo]}
+            onPress={() => setCatActiva(cat)}
+          >
+            <Text style={[s.chipText, catActiva === cat && s.chipTextActivo]}>
+              {cat === 'Todos' ? '✨ Todos' : cat}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {filtered.length === 0 && !loading ? (
+        <View style={s.empty}>
+          <Text style={{ fontSize: 48 }}>🔍</Text>
+          <Text style={s.emptyTitle}>
+            {search ? 'Sin resultados' : 'No hay productos aún'}
+          </Text>
+          <Text style={s.emptySubtitle}>
+            {search ? 'Intenta con otro término' : 'El administrador aún no ha agregado productos'}
+          </Text>
+        </View>
+      ) : (
+        <>
+          <Text style={s.count}>{filtered.length} productos</Text>
+          <FlatList
+            data={filtered}
+            keyExtractor={item => item.id}
+            renderItem={renderProducto}
+            numColumns={2}
+            contentContainerStyle={s.lista}
+            showsVerticalScrollIndicator={false}
+            onRefresh={cargarProductos}
+            refreshing={loading}
+          />
+        </>
+      )}
+
+      <CustomAlert
+        visible={alert.visible} title={alert.title} message={alert.msg}
+        onClose={() => setAlert({ ...alert, visible: false })}
+      />
+    </SafeAreaView>
   );
 }
 
@@ -242,9 +250,6 @@ const s = StyleSheet.create({
   header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, backgroundColor: '#FFF' },
   welcome:        { fontSize: 14, color: '#AAA', fontWeight: '600' },
   title:          { fontSize: 32, fontWeight: '900', color: '#1A1A1A' },
-  cartBadgeBox:   { position: 'relative' },
-  cartBadge:      { position: 'absolute', top: -4, right: -4, backgroundColor: '#EF4444', borderRadius: 8, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3 },
-  cartBadgeText:  { color: '#FFF', fontSize: 9, fontWeight: '900' },
   searchBox:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', marginHorizontal: 16, marginVertical: 10, borderRadius: 16, paddingHorizontal: 14, elevation: 2 },
   searchIcon:     { fontSize: 16, marginRight: 8 },
   searchInput:    { flex: 1, paddingVertical: 12, color: '#111827', fontSize: 15 },
