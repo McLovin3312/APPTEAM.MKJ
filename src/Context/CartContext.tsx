@@ -10,13 +10,13 @@ export interface CartItem {
 }
 
 interface CartContextType {
-  items: CartItem[];
+  items: CartItem[]; // Este es el arreglo que contiene los productos
   addItem: (product: Omit<CartItem, 'quantity'>) => void;
   removeItem: (id: string) => void;
   updateQty: (id: string, qty: number) => void;
   clearCart: () => void;
   total: number;
-  count: number;
+  count: number; // Este es el número total de productos para el badge rojo
 }
 
 const CartContext = createContext<CartContextType>({} as CartContextType);
@@ -48,6 +48,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
 
   const clearCart = useCallback(() => setItems([]), []);
 
+  // Cálculos automáticos para la interfaz
   const total = items.reduce((acc, i) => acc + i.price * i.quantity, 0);
   const count = items.reduce((acc, i) => acc + i.quantity, 0);
 
@@ -58,4 +59,8 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-export const useCart = () => useContext(CartContext);
+export const useCart = () => {
+  const context = useContext(CartContext);
+  if (!context) throw new Error("useCart debe usarse dentro de un CartProvider");
+  return context;
+};

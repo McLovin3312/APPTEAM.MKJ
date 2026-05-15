@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, ActivityIndicator, StatusBar, Alert,
+  ScrollView, ActivityIndicator, StatusBar
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
@@ -10,8 +10,7 @@ import CustomAlert from '../components/CustomAlert';
 
 const AVATAR_COLORS = ['#4F46E5','#10B981','#F59E0B','#EF4444','#EC4899','#3B82F6','#8B5CF6','#06B6D4'];
 
-// Recibe onLogout como prop desde ShopNavigator
-export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
+export default function ProfileScreen() {
   const [perfil,   setPerfil]   = useState<any>(null);
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
@@ -69,21 +68,6 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  const handleLogout = () => {
-  console.log('onLogout prop:', typeof onLogout);
-  Alert.alert('Cerrar sesión', '¿Seguro que deseas salir?', [
-    { text: 'Cancelar', style: 'cancel' },
-    {
-      text: 'Salir',
-      style: 'destructive',
-      onPress: () => {
-        console.log('Ejecutando onLogout...');
-        onLogout();
-      },
-    },
-  ]);
-};
-
   const set = (k: string) => (v: string) => setForm(prev => ({ ...prev, [k]: v }));
 
   const iniciales = () =>
@@ -116,11 +100,7 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        contentContainerStyle={s.scroll}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Avatar */}
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         <View style={s.avatarSection}>
           <View style={[s.avatar, { backgroundColor: avatarColor() }]}>
             <Text style={s.avatarText}>{iniciales()}</Text>
@@ -132,20 +112,14 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
               <Text style={s.adminBadgeText}>👑 ADMINISTRADOR</Text>
             </View>
           )}
-          {perfil?.puntos_lealtad > 0 && (
-            <View style={s.puntosBadge}>
-              <Text style={s.puntosText}>⭐ {perfil.puntos_lealtad} puntos de lealtad</Text>
-            </View>
-          )}
         </View>
 
-        {/* Datos */}
         <Text style={s.sectionTitle}>👤 Información Personal</Text>
         <View style={s.card}>
           {[
-            { label: 'Nombre',             key: 'nombre',          placeholder: 'Tu nombre' },
-            { label: 'Apellido',           key: 'apellido',        placeholder: 'Tu apellido' },
-            { label: 'Teléfono',           key: 'telefono',        placeholder: '+57 300...' },
+            { label: 'Nombre',             key: 'nombre',           placeholder: 'Tu nombre' },
+            { label: 'Apellido',           key: 'apellido',         placeholder: 'Tu apellido' },
+            { label: 'Teléfono',           key: 'telefono',         placeholder: '+57 300...' },
             { label: 'Dirección de envío', key: 'direccion_envio', placeholder: 'Calle, ciudad...' },
           ].map(f => (
             <View key={f.key} style={s.fieldBox}>
@@ -165,29 +139,17 @@ export default function ProfileScreen({ onLogout }: { onLogout: () => void }) {
               )}
             </View>
           ))}
-
-          <View style={s.fieldBox}>
-            <Text style={s.fieldLabel}>Correo electrónico</Text>
-            <Text style={[s.fieldValue, { color: '#9CA3AF' }]}>{perfil?.email}</Text>
-            <Text style={s.fieldHint}>El correo no se puede cambiar desde aquí</Text>
-          </View>
         </View>
 
         {editMode && (
           <TouchableOpacity style={s.cancelBtn} onPress={() => setEditMode(false)}>
-            <Text style={s.cancelBtnText}>CANCELAR</Text>
+            <Text style={s.cancelBtnText}>CANCELAR EDICIÓN</Text>
           </TouchableOpacity>
         )}
-
-        <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
-          <Text style={{ fontSize: 20 }}>🚪</Text>
-          <Text style={s.logoutText}>Cerrar sesión</Text>
-        </TouchableOpacity>
-
       </ScrollView>
 
       <CustomAlert
-        visible={alert.visible} title={alert.title} message={alert.msg} type={alert.type}
+        visible={alert.visible} title={alert.title} message={alert.msg}
         onClose={() => setAlert({ ...alert, visible: false })}
       />
     </SafeAreaView>
@@ -209,17 +171,12 @@ const s = StyleSheet.create({
   avatarEmail:    { fontSize: 14, color: '#6B7280', marginTop: 2 },
   adminBadge:     { marginTop: 8, backgroundColor: '#FEF3C7', paddingHorizontal: 14, paddingVertical: 5, borderRadius: 10 },
   adminBadgeText: { color: '#D97706', fontWeight: '900', fontSize: 12 },
-  puntosBadge:    { marginTop: 6, backgroundColor: '#EEF2FF', paddingHorizontal: 14, paddingVertical: 5, borderRadius: 10 },
-  puntosText:     { color: '#4F46E5', fontWeight: '800', fontSize: 12 },
   sectionTitle:   { fontSize: 13, fontWeight: '800', color: '#374151', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 10 },
   card:           { backgroundColor: '#FFF', borderRadius: 20, padding: 16, marginBottom: 16, elevation: 2 },
   fieldBox:       { marginBottom: 16 },
   fieldLabel:     { fontSize: 11, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
   fieldValue:     { fontSize: 16, color: '#111827', fontWeight: '600' },
   fieldInput:     { backgroundColor: '#F8F9FB', borderRadius: 12, padding: 12, color: '#111827', fontSize: 15, borderWidth: 1, borderColor: '#E5E7EB' },
-  fieldHint:      { fontSize: 11, color: '#9CA3AF', marginTop: 3 },
   cancelBtn:      { backgroundColor: '#F3F4F6', padding: 16, borderRadius: 16, alignItems: 'center', marginBottom: 12 },
   cancelBtnText:  { color: '#6B7280', fontWeight: '800', letterSpacing: 1 },
-  logoutBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#FEE2E2', padding: 16, borderRadius: 16, marginTop: 8 },
-  logoutText:     { color: '#EF4444', fontWeight: '800', fontSize: 15 },
 });

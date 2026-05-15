@@ -1,19 +1,46 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../lib/authService';
 import CustomAlert from '../components/CustomAlert';
 
 const AdminScreen = ({ navigation }: any) => {
-  const [alert, setAlert] = React.useState({ visible: false, title: '', msg: '' });
+  // Estado de alerta mejorado para manejar la confirmación de salida
+  const [alert, setAlert] = useState({ 
+    visible: false, 
+    title: '', 
+    msg: '', 
+    isLogout: false 
+  });
 
-  const handleLogout = async () => {
+  // Activa el modal de confirmación
+  const triggerLogout = () => {
+    setAlert({ 
+      visible: true, 
+      title: 'MODO ADMINISTRADOR', 
+      msg: '¿Deseas cerrar la sesión administrativa?', 
+      isLogout: true 
+    });
+  };
+
+  // Cierre de sesión definitivo
+  const confirmLogout = async () => {
     try {
       await authService.signOut();
-      navigation.replace('Login');
+      setAlert({ ...alert, visible: false });
+      navigation.replace('Login'); 
     } catch {
-      setAlert({ visible: true, title: 'ERROR', msg: 'No se pudo cerrar la sesión.' });
+      setAlert({ 
+        visible: true, 
+        title: 'ERROR', 
+        msg: 'No se pudo cerrar la sesión.', 
+        isLogout: false 
+      });
     }
+  };
+
+  const cancelAlert = () => {
+    setAlert({ ...alert, visible: false });
   };
 
   const adminOptions = [
@@ -31,7 +58,8 @@ const AdminScreen = ({ navigation }: any) => {
             <Text style={s.title}>Panel Admin</Text>
             <Text style={s.subtitle}>Gestión del Sistema</Text>
           </View>
-          <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
+          {/* Botón de salida que ahora dispara el CustomAlert */}
+          <TouchableOpacity style={s.logoutBtn} onPress={triggerLogout}>
             <Text style={{ fontSize: 22 }}>🚪</Text>
           </TouchableOpacity>
         </View>
@@ -54,8 +82,17 @@ const AdminScreen = ({ navigation }: any) => {
         </View>
       </ScrollView>
 
-      <CustomAlert visible={alert.visible} title={alert.title} message={alert.msg}
-        onClose={() => setAlert({ ...alert, visible: false })} />
+      {/* MODAL PERSONALIZADO CON DOBLE BOTÓN */}
+      <CustomAlert 
+        visible={alert.visible} 
+        title={alert.title} 
+        message={alert.msg}
+        onClose={() => {
+          if (alert.isLogout) confirmLogout(); // Botón Continuar
+          else cancelAlert();
+        }}
+        onCancel={alert.isLogout ? cancelAlert : undefined} // Botón Cancelar
+      />
     </SafeAreaView>
   );
 };

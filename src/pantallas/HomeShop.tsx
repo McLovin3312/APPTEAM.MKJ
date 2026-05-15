@@ -2,9 +2,14 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, FlatList, Image, StyleSheet,
   ActivityIndicator, TouchableOpacity, StatusBar,
-  Dimensions, TextInput, ScrollView, Alert
+
+
+  Dimensions, TextInput, ScrollView
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+
+import { MaterialCommunityIcons } from '@expo/vector-icons'; 
 import { supabase } from '../lib/supabase';
 import { productService } from '../lib/productService'; 
 import { useCart } from '../Context/CartContext';
@@ -14,7 +19,11 @@ import CustomAlert from '../components/CustomAlert';
 const { width } = Dimensions.get('window');
 
 export default function HomeShopScreen({ navigation }: any) {
-  const { addItem } = useCart();
+  // Desestructuramos 'count' para el círculo rojo del carrito [cite: 1630, 1631]
+  const { addItem, items, count } = useCart(); 
+
+
+  
   const [products,   setProducts]   = useState<any[]>([]);
   const [filtered,   setFiltered]   = useState<any[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -22,7 +31,16 @@ export default function HomeShopScreen({ navigation }: any) {
   const [search,     setSearch]     = useState('');
   const [catActiva,  setCatActiva]  = useState('Todos');
   const [addedId,    setAddedId]    = useState<string | null>(null);
-  const [alert,      setAlert]      = useState({ visible: false, title: '', msg: '' });
+  
+  // Estado de alerta para manejar la confirmación de Logout [cite: 1645, 1684]
+  const [alert, setAlert] = useState({ 
+    visible: false, 
+    title: '', 
+    msg: '', 
+    isLogout: false 
+
+
+  });
 
   useEffect(() => { cargarProductos(); }, []);
 
@@ -40,7 +58,6 @@ export default function HomeShopScreen({ navigation }: any) {
   const cargarProductos = async () => {
     try {
       setLoading(true);
-      
       const [dbResponse, dummyData] = await Promise.all([
         supabase
           .from('productos')
@@ -51,9 +68,7 @@ export default function HomeShopScreen({ navigation }: any) {
       ]);
 
       if (dbResponse.error) throw dbResponse.error;
-      
       const dbLista = dbResponse.data ?? [];
-
       const formattedDummy = dummyData.map((item: any) => ({
         id: `dummy-${item.id}`,
         nombre: item.title,
@@ -66,13 +81,11 @@ export default function HomeShopScreen({ navigation }: any) {
 
       const listaFinal = [...dbLista, ...formattedDummy];
       setProducts(listaFinal);
-
-      // Extraer categorías y ordenarlas alfabéticamente de forma independiente
       const categoriasUnicas = Array.from(new Set<string>(listaFinal.map((p: any) => p.categoria)));
       const catsOrdenadas = ['Todos', ...categoriasUnicas.sort((a, b) => a.localeCompare(b))];
       setCategories(catsOrdenadas);
-    } catch {
-      setAlert({ visible: true, title: 'ERROR', msg: 'No se pudieron cargar los productos.' });
+    } catch (error) {
+      setAlert({ visible: true, title: 'ERROR', msg: 'No se pudieron cargar los productos.', isLogout: false });
     } finally {
       setLoading(false);
     }
@@ -80,28 +93,42 @@ export default function HomeShopScreen({ navigation }: any) {
 
   const handleAdd = (item: any) => {
     addItem({
-      id:        item.id,
-      title:     item.nombre,
-      price:     item.precio,
+      id: item.id,
+      title: item.nombre,
+
+      price: item.precio,
       thumbnail: item.imagen_url ?? '',
-      category:  item.categoria,
+
+      category: item.categoria,
     });
     setAddedId(item.id);
     setTimeout(() => setAddedId(null), 800);
   };
 
-  const handleLogout = () => {
-    Alert.alert('Cerrar sesión', '¿Deseas salir de tu cuenta?', [
-      { text: 'Cancelar', style: 'cancel' },
-      { 
-        text: 'Salir', 
-        style: 'destructive', 
-        onPress: async () => {
-          await authService.signOut();
-          navigation.getParent()?.replace('Login');
-        } 
-      },
-    ]);
+  // Función para disparar el modal de confirmación [cite: 1654, 1685]
+  const triggerLogout = () => {
+    setAlert({ 
+      visible: true, 
+      title: 'CERRAR SESIÓN', 
+      msg: '¿Estás seguro de que deseas salir de tu cuenta?', 
+      isLogout: true 
+    });
+  };
+
+  // Cierre de sesión definitivo [cite: 1656, 1657]
+  const confirmLogout = async () => {
+    try {
+      await authService.signOut();
+      setAlert({ ...alert, visible: false });
+      navigation.replace('Login'); // Bloqueamos el retroceso [cite: 1694]
+    } catch (error) {
+      setAlert({ visible: true, title: 'ERROR', msg: 'Fallo al cerrar sesión.', isLogout: false });
+    }
+  };
+
+  const cancelAlert = () => {
+
+    setAlert({ ...alert, visible: false });
   };
 
   const renderProducto = ({ item }: any) => {
@@ -112,27 +139,19 @@ export default function HomeShopScreen({ navigation }: any) {
           {item.imagen_url ? (
             <Image source={{ uri: item.imagen_url }} style={s.img} />
           ) : (
-            <View style={s.imgPlaceholder}>
-              <Text style={{ fontSize: 36 }}>📦</Text>
-            </View>
+
+            <View style={s.imgPlaceholder}><Text style={{ fontSize: 36 }}>📦</Text></View>
           )}
           {item.stock !== null && item.stock <= 5 && item.stock > 0 && (
-            <View style={s.stockTag}>
-              <Text style={s.stockTagText}>¡Últimas {item.stock}!</Text>
-            </View>
-          )}
-          {item.stock === 0 && (
-            <View style={[s.stockTag, { backgroundColor: '#EF4444' }]}>
-              <Text style={s.stockTagText}>Agotado</Text>
-            </View>
+
+<View style={s.stockTag}><Text style={s.stockTagText}>¡Últimas {item.stock}!</Text></View>
           )}
         </View>
         <View style={s.info}>
           <Text style={s.category}>{item.categoria.toUpperCase()}</Text>
+
+
           <Text style={s.name} numberOfLines={1}>{item.nombre}</Text>
-          {item.descripcion ? (
-            <Text style={s.desc} numberOfLines={1}>{item.descripcion}</Text>
-          ) : null}
           <View style={s.priceRow}>
             <Text style={s.price}>${item.precio}</Text>
             <TouchableOpacity
@@ -160,16 +179,29 @@ export default function HomeShopScreen({ navigation }: any) {
     <SafeAreaView style={s.container}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Header */}
+
+      {/* Header con Carrito y Salida Funcionales [cite: 1666, 1668] */}
       <View style={s.header}>
         <View>
           <Text style={s.welcome}>¡Hola de nuevo!</Text>
           <Text style={s.title}>Explorar</Text>
         </View>
-        {/* BOTÓN DE SALIR (Reemplaza al carrito) */}
-        <TouchableOpacity style={{ padding: 8 }} onPress={handleLogout}>
-          <Text style={{ fontSize: 28, color: '#EF4444' }}>🚪</Text>
-        </TouchableOpacity>
+        
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <TouchableOpacity style={s.headerBtn} onPress={() => navigation.navigate('Cart')}>
+            <MaterialCommunityIcons name="cart-outline" size={26} color="#1A1A1A" />
+            {count > 0 && (
+              <View style={s.cartBadge}>
+                <Text style={s.cartBadgeText}>{count}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[s.headerBtn, { backgroundColor: '#FEE2E2' }]} onPress={triggerLogout}>
+             <MaterialCommunityIcons name="logout-variant" size={24} color="#EF4444" />
+          </TouchableOpacity>
+
+        </View>
       </View>
 
       {/* Buscador */}
@@ -181,63 +213,46 @@ export default function HomeShopScreen({ navigation }: any) {
           placeholderTextColor="#9CA3AF"
           value={search}
           onChangeText={setSearch}
-        />
-        {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch('')}>
-            <Text style={{ color: '#9CA3AF', fontSize: 16, paddingHorizontal: 8 }}>✕</Text>
-          </TouchableOpacity>
-        )}
+
+/>
       </View>
 
-      {/* Categorías dinámicas */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={s.filterBar}
-        contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
-      >
+      {/* Categorías */}
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterBar} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
         {categories.map((cat, idx) => (
-          <TouchableOpacity
-            key={idx}
-            style={[s.chip, catActiva === cat && s.chipActivo]}
-            onPress={() => setCatActiva(cat)}
-          >
-            <Text style={[s.chipText, catActiva === cat && s.chipTextActivo]}>
-              {cat === 'Todos' ? '✨ Todos' : cat}
-            </Text>
+          <TouchableOpacity key={idx} style={[s.chip, catActiva === cat && s.chipActivo]} onPress={() => setCatActiva(cat)}>
+
+            <Text style={[s.chipText, catActiva === cat && s.chipTextActivo]}>{cat === 'Todos' ? '✨ Todos' : cat}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
 
-      {filtered.length === 0 && !loading ? (
-        <View style={s.empty}>
-          <Text style={{ fontSize: 48 }}>🔍</Text>
-          <Text style={s.emptyTitle}>
-            {search ? 'Sin resultados' : 'No hay productos aún'}
-          </Text>
-          <Text style={s.emptySubtitle}>
-            {search ? 'Intenta con otro término' : 'El administrador aún no ha agregado productos'}
-          </Text>
-        </View>
-      ) : (
-        <>
-          <Text style={s.count}>{filtered.length} productos</Text>
-          <FlatList
-            data={filtered}
-            keyExtractor={item => item.id}
-            renderItem={renderProducto}
-            numColumns={2}
-            contentContainerStyle={s.lista}
-            showsVerticalScrollIndicator={false}
-            onRefresh={cargarProductos}
-            refreshing={loading}
-          />
-        </>
-      )}
+      {/* Listado de Productos */}
+      <FlatList
+        data={filtered}
+        keyExtractor={item => item.id}
+        renderItem={renderProducto}
+        numColumns={2}
+        contentContainerStyle={s.lista}
+        showsVerticalScrollIndicator={false}
+        onRefresh={cargarProductos}
+        refreshing={loading}
 
+/>
+
+
+      {/* MODAL PERSONALIZADO CON DOBLE BOTÓN [cite: 1675, 1688] */}
       <CustomAlert
-        visible={alert.visible} title={alert.title} message={alert.msg}
-        onClose={() => setAlert({ ...alert, visible: false })}
+        visible={alert.visible} 
+        title={alert.title} 
+        message={alert.msg}
+        onClose={() => {
+          if(alert.isLogout) confirmLogout(); // Si presiona "Continuar" [cite: 1689]
+          else cancelAlert();
+        }}
+
+        onCancel={alert.isLogout ? cancelAlert : undefined} // Botón de "Cancelar" [cite: 1687, 1691]
       />
     </SafeAreaView>
   );
@@ -250,15 +265,23 @@ const s = StyleSheet.create({
   header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, backgroundColor: '#FFF' },
   welcome:        { fontSize: 14, color: '#AAA', fontWeight: '600' },
   title:          { fontSize: 32, fontWeight: '900', color: '#1A1A1A' },
+  headerBtn:      { padding: 10, backgroundColor: '#F3F4F6', borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  cartBadge:      { position: 'absolute', top: -4, right: -4, backgroundColor: '#EF4444', borderRadius: 10, width: 20, height: 20, justifyContent: 'center', alignItems: 'center', borderSize: 2, borderColor: '#FFF' },
+
+  cartBadgeText:  { color: '#FFF', fontSize: 11, fontWeight: '900' },
   searchBox:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', marginHorizontal: 16, marginVertical: 10, borderRadius: 16, paddingHorizontal: 14, elevation: 2 },
   searchIcon:     { fontSize: 16, marginRight: 8 },
   searchInput:    { flex: 1, paddingVertical: 12, color: '#111827', fontSize: 15 },
-  filterBar:      { backgroundColor: '#FFF', paddingVertical: 10 },
+
+  filterBar:      { backgroundColor: '#FFF', paddingVertical: 10, maxHeight: 60 },
   chip:           { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 12, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
   chipActivo:     { backgroundColor: '#1A1A1A', borderColor: '#1A1A1A' },
   chipText:       { fontSize: 12, color: '#6B7280', fontWeight: '700' },
+
+
+
+
   chipTextActivo: { color: '#FFF' },
-  count:          { paddingHorizontal: 20, color: '#9CA3AF', fontSize: 12, fontWeight: '600', marginTop: 8, marginBottom: 4 },
   lista:          { paddingHorizontal: 10, paddingBottom: 30 },
   card:           { backgroundColor: '#FFF', width: (width / 2) - 20, margin: 8, borderRadius: 24, padding: 12, elevation: 3 },
   imgBox:         { width: '100%', height: 130, borderRadius: 18, overflow: 'hidden', backgroundColor: '#F3F4F6', marginBottom: 12 },
@@ -268,15 +291,19 @@ const s = StyleSheet.create({
   stockTagText:   { color: '#FFF', fontSize: 9, fontWeight: '800' },
   info:           { paddingHorizontal: 2 },
   category:       { fontSize: 10, color: '#4F46E5', fontWeight: '800', marginBottom: 4 },
+
+
+
+
   name:           { fontSize: 15, fontWeight: '700', color: '#1A1A1A' },
-  desc:           { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
   priceRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
   price:          { fontSize: 18, fontWeight: '900' },
   addBtn:         { backgroundColor: '#1A1A1A', width: 30, height: 30, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   addBtnDone:     { backgroundColor: '#10B981' },
   addBtnDisabled: { backgroundColor: '#D1D5DB' },
+
+
+
+
   addBtnText:     { color: '#FFF', fontSize: 18 },
-  empty:          { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8, padding: 40 },
-  emptyTitle:     { fontSize: 20, fontWeight: '900', color: '#111827' },
-  emptySubtitle:  { fontSize: 14, color: '#9CA3AF', textAlign: 'center' },
 });
