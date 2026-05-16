@@ -6,7 +6,8 @@ import {
   Dimensions, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { productService, Product } from '../lib/productService';
+import { productService } from '../lib/productService'; 
+import { supabase } from '../lib/supabase'; 
 import CustomAlert from '../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
@@ -41,7 +42,6 @@ const CAT_STYLES: Record<string, { bg: string; accent: string; emoji: string }> 
 const getCat = (cat: string) =>
   CAT_STYLES[cat?.toLowerCase()] ?? { bg: '#F3F4F6', accent: '#6B7280', emoji: '📦' };
 
-// ─── Categorías por defecto ───────────────────────────────────────
 const DEFAULT_CATS = [
   'smartphones','laptops','electronics','wearables','furniture',
   'home-decoration','fragrances','skincare','groceries','tops',
@@ -55,14 +55,14 @@ const EMPTY_FORM = {
 };
 
 export default function AdminProductsScreen({ navigation }: any) {
-  const [products,   setProducts]   = useState<Product[]>([]);
-  const [filtered,   setFiltered]   = useState<Product[]>([]);
+  const [products,   setProducts]   = useState<any[]>([]);
+  const [filtered,   setFiltered]   = useState<any[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [saving,     setSaving]     = useState(false);
   const [search,     setSearch]     = useState('');
   const [modal,      setModal]      = useState(false);
   const [catModal,   setCatModal]   = useState(false);
-  const [editing,    setEditing]    = useState<Product | null>(null);
+  const [editing,    setEditing]    = useState<any | null>(null);
   const [form,       setForm]       = useState<typeof EMPTY_FORM>(EMPTY_FORM);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATS);
   const [newCat,     setNewCat]     = useState('');
@@ -80,19 +80,43 @@ export default function AdminProductsScreen({ navigation }: any) {
     );
   }, [search, products]);
 
-  // Resetea preview cuando cambia la URL
   useEffect(() => { setImgOk(false); }, [form.imagen_url]);
 
   const cargar = async () => {
     try {
       setLoading(true);
-      const data = await productService.getAll();
-      setProducts(data);
-      // Agrega categorías que ya existen en BD pero no están en la lista
-      const dbCats = [...new Set(data.map((p: Product) => p.categoria.toLowerCase()))];
+      
+      const [dbLista, dummyData] = await Promise.all([
+        productService.getAll(),
+        productService.getDummyProducts()
+      ]);
+
+      const rawDummy = Array.isArray(dummyData) ? dummyData : [];
+
+      const formattedDummy = rawDummy.map((item: any) => ({
+        id: `dummy-${item.id}`,
+        nombre: item.title,         
+        descripcion: item.description || '',
+        precio: item.price || 0,      
+        imagen_url: item.thumbnail || '', 
+        categoria: item.category || 'general', 
+        stock: item.stock ?? 10,
+        es_api_pura: true
+      }));
+
+      const dummyFiltrados = formattedDummy.filter((pDummy: any) => {
+        const idOriginal = pDummy.id.replace('dummy-', '');
+        return !dbLista.some((pDB: any) => pDB.id_referencia_api === idOriginal);
+      });
+
+      const listaFinal = [...dbLista, ...dummyFiltrados];
+      setProducts(listaFinal);
+      
+      const dbCats = [...new Set(listaFinal.map((p: any) => p.categoria.toLowerCase()))];
       setCategories(prev => [...new Set([...prev, ...dbCats])]);
-    } catch {
-      showAlert('ERROR', 'No se pudieron cargar los productos.', 'error');
+    } catch (error: any) { 
+      console.error("Error cargando el catálogo administrativo masivo:", error);
+      showAlert('ERROR', 'No se pudieron procesar las fuentes de datos.', 'error');
     } finally {
       setLoading(false);
     }
@@ -108,7 +132,7 @@ export default function AdminProductsScreen({ navigation }: any) {
     setModal(true);
   };
 
-  const abrirEditar = (p: Product) => {
+  const abrirEditar = (p: any) => {
     setEditing(p);
     setForm({
       nombre:      p.nombre,
@@ -122,27 +146,33 @@ export default function AdminProductsScreen({ navigation }: any) {
     setModal(true);
   };
 
-  const confirmarEliminar = (p: Product) => {
+  const confirmarEliminar = (p: any) => {
     Alert.alert(
       'Eliminar producto',
       `¿Seguro que deseas eliminar "${p.nombre}"?`,
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Eliminar', style: 'destructive', onPress: () => eliminar(p.id!) },
+        { text: 'Eliminar', style: 'destructive', onPress: () => eliminar(p) },
       ]
     );
   };
 
-  const eliminar = async (id: string) => {
+  const eliminar = async (p: any) => {
     try {
-      await productService.remove(id);
-      setProducts(prev => prev.filter(p => p.id !== id));
-      showAlert('ELIMINADO', 'Producto eliminado con éxito.', 'success');
+      if (p.id && p.id.toString().includes('dummy-')) {
+        setProducts(prev => prev.filter(item => item.id !== p.id));
+      } else {
+        const { error } = await supabase.from('productos').delete().eq('id', p.id);
+        if (error) throw error;
+        setProducts(prev => prev.filter(item => item.id !== p.id));
+      }
+      showAlert('ELIMINADO', 'Producto removido con éxito.', 'success');
     } catch {
-      showAlert('ERROR', 'No se pudo eliminar.', 'error');
+      showAlert('ERROR', 'No se pudo eliminar de la base de datos.', 'error');
     }
   };
 
+  // GUARDAR UNIVERSAL CORREGIDO (Sincronizado con productService)
   const guardar = async () => {
     if (!form.nombre.trim() || !form.precio || !form.categoria.trim()) {
       showAlert('CAMPOS VACÍOS', 'Nombre, precio y categoría son obligatorios.', 'error');
@@ -150,15 +180,30 @@ export default function AdminProductsScreen({ navigation }: any) {
     }
     setSaving(true);
     try {
-      if (editing?.id) {
-        const updated = await productService.update(editing.id, form);
-        setProducts(prev => prev.map(p => p.id === editing.id ? updated : p));
-        showAlert('ACTUALIZADO', 'Producto actualizado.', 'success');
-      } else {
-        const created = await productService.create(form);
-        setProducts(prev => [created, ...prev]);
-        showAlert('CREADO', 'Producto creado con éxito.', 'success');
+      const payload: any = {
+        ...form,
+        id: editing ? editing.id : undefined,
+        id_referencia_api: editing?.id_referencia_api ?? undefined
+      };
+
+      // Si es un producto de la API que se va a editar/clonar por primera vez
+      if (editing && editing.id && editing.id.toString().includes('dummy-') && !payload.id_referencia_api) {
+        payload.id_referencia_api = editing.id.toString().replace('dummy-', '');
+        // Limpiamos el id temporal de la API para que Supabase le genere un UUID real de base de datos
+        payload.id = undefined; 
       }
+
+      // CORRECCIÓN CLAVE: Usamos la función universal createProduct que ya tienes en tu servicio
+      await productService.createProduct(payload);
+      
+      // Recargamos el catálogo híbrido fresco
+      await cargar(); 
+      
+      showAlert(
+        editing ? 'ACTUALIZADO' : 'CREADO', 
+        editing ? 'Producto procesado y guardado en Supabase.' : 'Producto creado con éxito.', 
+        'success'
+      );
       setModal(false);
     } catch (e: any) {
       showAlert('ERROR', e.message ?? 'No se pudo guardar.', 'error');
@@ -167,7 +212,6 @@ export default function AdminProductsScreen({ navigation }: any) {
     }
   };
 
-  // ─── CRUD Categorías ─────────────────────────────────────────
   const agregarCategoria = () => {
     const limpia = newCat.trim().toLowerCase().replace(/\s+/g, '-');
     if (!limpia) return;
@@ -199,8 +243,7 @@ export default function AdminProductsScreen({ navigation }: any) {
   const setField = (k: keyof typeof EMPTY_FORM) => (v: string) =>
     setForm(prev => ({ ...prev, [k]: k === 'precio' || k === 'stock' ? Number(v) : v }));
 
-  // ─── Render producto ─────────────────────────────────────────
-  const renderProduct = useCallback(({ item }: { item: Product }) => {
+  const renderProduct = useCallback(({ item }: { item: any }) => {
     const cs = getCat(item.categoria);
     return (
       <View style={[s.card, { backgroundColor: '#FFF' }]}>
@@ -210,13 +253,13 @@ export default function AdminProductsScreen({ navigation }: any) {
           ) : (
             <Text style={s.cardEmoji}>{cs.emoji}</Text>
           )}
-          <View style={[s.accentDot, { backgroundColor: cs.accent }]} />
+          <View style={[s.accentDot, { backgroundColor: item.es_api_pura ? '#9CA3AF' : '#10B981' }]} />
         </View>
         <View style={s.cardBody}>
-          <Text style={[s.cardCat, { color: cs.accent }]}>{item.categoria.toUpperCase()}</Text>
+          <Text style={[s.cardCat, { color: cs.accent }]}>{item.categoria ? item.categoria.toUpperCase() : 'GENERAL'}</Text>
           <Text style={s.cardName} numberOfLines={1}>{item.nombre}</Text>
           <View style={s.cardFooter}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={s.cardPrice}>${item.precio}</Text>
               {item.stock !== undefined && (
                 <Text style={s.cardStock}>Stock: {item.stock}</Text>
@@ -240,7 +283,7 @@ export default function AdminProductsScreen({ navigation }: any) {
     <SafeAreaView style={s.container}>
       <StatusBar barStyle="light-content" />
 
-      {/* ─── Header ─── */}
+      {/* Header */}
       <View style={s.header}>
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
           <Text style={s.backIcon}>←</Text>
@@ -249,7 +292,6 @@ export default function AdminProductsScreen({ navigation }: any) {
           <Text style={s.headerSub}>PANEL ADMIN</Text>
           <Text style={s.headerTitle}>Productos</Text>
         </View>
-        {/* Botón gestionar categorías */}
         <TouchableOpacity style={s.catMgrBtn} onPress={() => setCatModal(true)}>
           <Text style={s.catMgrIcon}>🏷</Text>
         </TouchableOpacity>
@@ -258,7 +300,7 @@ export default function AdminProductsScreen({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
-      {/* ─── Search ─── */}
+      {/* Buscador */}
       <View style={s.searchBox}>
         <Text style={s.searchIcon}>🔍</Text>
         <TextInput
@@ -275,13 +317,13 @@ export default function AdminProductsScreen({ navigation }: any) {
         )}
       </View>
 
-      <Text style={s.count}>{filtered.length} productos</Text>
+      <Text style={s.count}>{filtered.length} productos en el inventario</Text>
 
-      {/* ─── Lista ─── */}
+      {/* Listado */}
       {loading ? (
         <View style={s.center}>
           <ActivityIndicator size="large" color="#4F46E5" />
-          <Text style={s.loadingText}>Cargando productos...</Text>
+          <Text style={s.loadingText}>Sincronizando catálogos híbridos masivos...</Text>
         </View>
       ) : filtered.length === 0 ? (
         <View style={s.center}>
@@ -298,7 +340,7 @@ export default function AdminProductsScreen({ navigation }: any) {
       ) : (
         <FlatList
           data={filtered}
-          keyExtractor={item => item.id ?? Math.random().toString()}
+          keyExtractor={(item, index) => item.id?.toString() || index.toString()}
           renderItem={renderProduct}
           numColumns={2}
           contentContainerStyle={s.list}
@@ -306,9 +348,7 @@ export default function AdminProductsScreen({ navigation }: any) {
         />
       )}
 
-      {/* ══════════════════════════════════════════════════
-          MODAL: Crear / Editar Producto
-      ══════════════════════════════════════════════════ */}
+      {/* MODAL: Crear / Editar Producto */}
       <Modal visible={modal} animationType="slide" transparent>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -318,7 +358,10 @@ export default function AdminProductsScreen({ navigation }: any) {
             <View style={s.modalHandle} />
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={s.modalTitle}>
-                {editing ? '✏️  Editar Producto' : '📦  Nuevo Producto'}
+                {editing ? '✏️  Editar Producto Universal' : '📦  Nuevo Producto'}
+              </Text>
+              <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 16 }}>
+                {editing?.es_api_pura ? 'Al guardar, este producto externo de DummyJSON se clonará automáticamente en Supabase.' : 'Guardado directo en base de datos de Supabase.'}
               </Text>
 
               {/* Nombre */}
@@ -333,13 +376,12 @@ export default function AdminProductsScreen({ navigation }: any) {
                 />
               </View>
 
-              {/* ─── Selector de Categoría ─── */}
+              {/* Categorías */}
               <View style={s.fieldBox}>
                 <View style={s.fieldLabelRow}>
                   <Text style={s.fieldLabel}>Categoría *</Text>
                 </View>
 
-                {/* Botón selector */}
                 <TouchableOpacity
                   style={[s.fieldInput, s.catSelector]}
                   onPress={() => setCatOpen(o => !o)}
@@ -356,7 +398,6 @@ export default function AdminProductsScreen({ navigation }: any) {
                   <Text style={{ color: '#9CA3AF' }}>{catOpen ? '▲' : '▼'}</Text>
                 </TouchableOpacity>
 
-                {/* Dropdown */}
                 {catOpen && (
                   <View style={s.dropdown}>
                     <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled>
@@ -411,7 +452,7 @@ export default function AdminProductsScreen({ navigation }: any) {
                 </View>
               </View>
 
-              {/* ─── URL de imagen con preview ─── */}
+              {/* URL Imagen */}
               <View style={s.fieldBox}>
                 <Text style={s.fieldLabel}>URL de imagen</Text>
                 <TextInput
@@ -424,7 +465,6 @@ export default function AdminProductsScreen({ navigation }: any) {
                   onChangeText={setField('imagen_url')}
                 />
 
-                {/* Preview */}
                 {form.imagen_url.trim().length > 10 && (
                   <View style={s.imgPreviewBox}>
                     {!imgOk && (
@@ -462,7 +502,7 @@ export default function AdminProductsScreen({ navigation }: any) {
                 />
               </View>
 
-              {/* Botones */}
+              {/* Acciones */}
               <View style={s.modalActions}>
                 <TouchableOpacity style={s.cancelBtn} onPress={() => setModal(false)} disabled={saving}>
                   <Text style={s.cancelBtnText}>CANCELAR</Text>
@@ -470,7 +510,7 @@ export default function AdminProductsScreen({ navigation }: any) {
                 <TouchableOpacity style={[s.saveBtn, saving && { opacity: 0.7 }]} onPress={guardar} disabled={saving}>
                   {saving
                     ? <ActivityIndicator color="#FFF" />
-                    : <Text style={s.saveBtnText}>GUARDAR</Text>
+                    : <Text style={s.saveBtnText}>GUARDAR EN SUPABASE</Text>
                   }
                 </TouchableOpacity>
               </View>
@@ -479,9 +519,7 @@ export default function AdminProductsScreen({ navigation }: any) {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ══════════════════════════════════════════════════
-          MODAL: Gestionar Categorías
-      ══════════════════════════════════════════════════ */}
+      {/* MODAL CATEGORÍAS */}
       <Modal visible={catModal} animationType="slide" transparent>
         <View style={s.modalOverlay}>
           <View style={[s.modalSheet, { maxHeight: '85%' }]}>
@@ -496,7 +534,6 @@ export default function AdminProductsScreen({ navigation }: any) {
               {categories.length} categorías · Las que están en uso no se pueden eliminar
             </Text>
 
-            {/* Agregar nueva */}
             <View style={s.newCatRow}>
               <TextInput
                 style={s.newCatInput}
@@ -517,7 +554,6 @@ export default function AdminProductsScreen({ navigation }: any) {
             </View>
             <Text style={s.catHint}>Los espacios se convierten automáticamente en guiones</Text>
 
-            {/* Lista de categorías */}
             <ScrollView style={s.catList} showsVerticalScrollIndicator={false}>
               {categories.map(cat => {
                 const cs = getCat(cat);
@@ -548,7 +584,9 @@ export default function AdminProductsScreen({ navigation }: any) {
       </Modal>
 
       <CustomAlert
-        visible={alert.visible} title={alert.title} message={alert.msg} type={alert.type}
+        visible={alert.visible}
+        title={alert.title}
+        message={alert.msg}
         onClose={() => setAlert({ ...alert, visible: false })}
       />
     </SafeAreaView>
@@ -571,12 +609,11 @@ const s = StyleSheet.create({
   searchInput:     { flex: 1, paddingVertical: 14, color: '#111827', fontSize: 15 },
   count:           { paddingHorizontal: 20, color: '#6B7280', fontSize: 13, fontWeight: '600', marginBottom: 4 },
   list:            { paddingHorizontal: 10, paddingBottom: 40 },
-  // Cards
   card:            { width: (width / 2) - 20, margin: 8, borderRadius: 22, overflow: 'hidden', elevation: 3 },
   cardTop:         { height: 110, justifyContent: 'center', alignItems: 'center' },
   cardImg:         { width: '85%', height: '85%' },
   cardEmoji:       { fontSize: 36 },
-  accentDot:       { position: 'absolute', top: 10, right: 10, width: 10, height: 10, borderRadius: 5 },
+  accentDot:       { position: 'absolute', top: 10, right: 10, width: 12, height: 12, borderRadius: 6, borderWidth: 1.5, borderColor: '#FFF' },
   cardBody:        { padding: 12 },
   cardCat:         { fontSize: 9, fontWeight: '800', letterSpacing: 0.5, marginBottom: 2 },
   cardName:        { fontSize: 14, fontWeight: '800', color: '#111827', marginBottom: 6 },
@@ -586,24 +623,20 @@ const s = StyleSheet.create({
   cardActions:     { flexDirection: 'row', gap: 6 },
   editBtn:         { width: 30, height: 30, borderRadius: 9, backgroundColor: '#EEF2FF', justifyContent: 'center', alignItems: 'center' },
   delBtn:          { width: 30, height: 30, borderRadius: 9, backgroundColor: '#FEE2E2', justifyContent: 'center', alignItems: 'center' },
-  // Estados
   center:          { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
   loadingText:     { marginTop: 12, color: '#6B7280', fontWeight: '600' },
   emptyText:       { color: '#9CA3AF', textAlign: 'center', marginTop: 12, fontSize: 15, lineHeight: 22 },
   emptyBtn:        { marginTop: 20, backgroundColor: '#4F46E5', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
   emptyBtnText:    { color: '#FFF', fontWeight: '800', fontSize: 15 },
-  // Modal base
   modalOverlay:    { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
   modalSheet:      { backgroundColor: '#111827', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 24, maxHeight: '92%' },
   modalHandle:     { width: 44, height: 4, backgroundColor: '#374151', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   modalTitle:      { color: '#FFF', fontSize: 20, fontWeight: '900', marginBottom: 6 },
   row:             { flexDirection: 'row' },
-  // Campos
   fieldBox:        { marginBottom: 16 },
   fieldLabelRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   fieldLabel:      { color: '#9CA3AF', fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: 6, textTransform: 'uppercase' },
   fieldInput:      { backgroundColor: '#1F2937', borderRadius: 14, padding: 14, color: '#FFF', fontSize: 15, borderWidth: 1, borderColor: '#374151' },
-  // Selector categoría
   catSelector:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   catSelectedRow:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
   catSelectedEmoji:{ fontSize: 18 },
@@ -612,20 +645,17 @@ const s = StyleSheet.create({
   dropItem:        { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: '#374151' },
   dropEmoji:       { fontSize: 18, width: 28, textAlign: 'center' },
   dropText:        { color: '#D1D5DB', fontSize: 14, flex: 1 },
-  // Preview imagen
   imgPreviewBox:         { marginTop: 10, backgroundColor: '#1F2937', borderRadius: 14, overflow: 'hidden', height: 160, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#374151' },
   imgPreviewPlaceholder: { alignItems: 'center', gap: 8 },
   imgPreviewHint:        { color: '#6B7280', fontSize: 12 },
   imgPreview:            { width: '100%', height: '100%' },
   imgPreviewBadge:       { position: 'absolute', bottom: 8, right: 8, backgroundColor: '#065F46', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   imgPreviewBadgeText:   { color: '#6EE7B7', fontSize: 11, fontWeight: '700' },
-  // Botones modal
   modalActions:    { flexDirection: 'row', gap: 12, marginTop: 24, marginBottom: 8 },
   cancelBtn:       { flex: 1, padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: '#374151', alignItems: 'center' },
   cancelBtnText:   { color: '#9CA3AF', fontWeight: '700' },
   saveBtn:         { flex: 1.5, padding: 16, borderRadius: 14, backgroundColor: '#4F46E5', alignItems: 'center' },
   saveBtnText:     { color: '#FFF', fontWeight: '900', fontSize: 15, letterSpacing: 0.5 },
-  // Modal categorías
   catMgrHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   catMgrSub:       { color: '#6B7280', fontSize: 12, marginBottom: 16 },
   newCatRow:       { flexDirection: 'row', gap: 10, marginBottom: 4 },
@@ -641,6 +671,4 @@ const s = StyleSheet.create({
   catInUseText:    { color: '#6EE7B7', fontSize: 10, fontWeight: '700' },
   catDelBtn:       { width: 32, height: 32, borderRadius: 9, backgroundColor: '#1F2937', justifyContent: 'center', alignItems: 'center' },
   catDelBtnText:   { fontSize: 14 },
-  editBtnText:     { fontSize: 14 },
-  delBtnText:      { fontSize: 14 },
 });
